@@ -246,7 +246,7 @@ plot_cdf_marginal <- function(data, variable) {
 # Function to test relationship based on Kendall
 kendall_test <- function(date, x, y, alpha_limit, name_method,stationName){
   # Perform Kendall's Tau test
-  kendall_test <- cor.test(jitter(x), jitter(y), method = name_method)
+  kendall_test <- cor.test(x, y, method = name_method)
   
   # Extract Kendall's Tau and p-value
   tau_value <- kendall_test$estimate

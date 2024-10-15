@@ -18,6 +18,7 @@ tide_station$End <- as.Date(tide_station$End, "%m/%d/%Y")
 # Create an empty list to store combined data by station
 combined_data_by_station <- list()
 
+con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
 # Loop through each unique UH value in tide_station
 for (i in 1:length(tide_station[,1])) {
    
@@ -54,7 +55,7 @@ for (i in 1:length(tide_station[,1])) {
       list_file$source_UH <- b$UH.[1]
       list_file$source_version <- "update"
        version_data_list[[length(version_data_list) + 1]] <- list_file
-      # print(paste("Data from:", url, "downloaded successfully."))
+      
     } else {
       message(paste("Failed to download:", url, "HTTP Status:", http_status(response)$message))
     }
@@ -90,7 +91,7 @@ for (i in 1:length(tide_station[,1])) {
       list_file1$source_UH <- a$UH.[1]
       list_file1$source_version <- unique_versions[1]
       version_data_list[[length(version_data_list) + 1]] <- list_file1
-      # print(paste("Data from:", url, "downloaded successfully."))
+     
     } else {
       message(paste("Failed to download:", url1, "HTTP Status:", http_status(response1)$message))
     }
@@ -104,7 +105,7 @@ for (i in 1:length(tide_station[,1])) {
       list_file2$source_UH <- b$UH.[1]
       list_file2$source_version <- paste(unique_versions[1],"next")
       version_data_list[[length(version_data_list) + 1]] <- list_file2
-      # print(paste("Data from:", url, "downloaded successfully."))
+      
     } else {
       message(paste("Failed to download:", url2, "HTTP Status:", http_status(response2)$message))
     }
@@ -135,7 +136,7 @@ for (i in 1:length(tide_station[,1])) {
       url2 <- paste0("https://uhslc.soest.hawaii.edu/data/csv/rqds/indian/daily/d", 
                      a$UH.[1], unique_versions[2], ".csv") 
     } else {
-      ur2 <- paste0("https://uhslc.soest.hawaii.edu/data/csv/rqds/pacific/daily/d", 
+      url2 <- paste0("https://uhslc.soest.hawaii.edu/data/csv/rqds/pacific/daily/d", 
                      a$UH.[1], unique_versions[2], ".csv") 
     }
     
@@ -289,12 +290,14 @@ for (i in 1:length(tide_station[,1])) {
     }
   }
   
+  
   # Combine all data for the current UH
   if (length(version_data_list) > 0) {
     combined_data <- bind_rows(version_data_list)
     combined_data_by_station[[current_UH]] <- combined_data
-    write.csv(combined_data, file = paste0("Global_Tide/Global_Tide_", current_UH, ".csv"), row.names = FALSE)
+    dbWriteTable(con, paste0("Global_Tide_", current_UH), combined_data, overwrite = T)
+    # write.csv(combined_data, file = paste0("Global_Tide/Global_Tide_", current_UH, ".csv"), row.names = FALSE)
   }
 }
-
+   dbDisconnect(con)
 }

@@ -2,10 +2,11 @@
 
 
 
+
 function(input, output, session) {
 
   # Loading all data  
- showModal(modalDialog(img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif', "Please wait ! Loading data in process ... " ), footer = NULL))
+ 
   source("R/clean_data.R")
   source("R/plot.R")
   source("R/copulas.R")
@@ -15,19 +16,45 @@ function(input, output, session) {
   source("R/distance_quantile_normalise.R")
   source("R/idf.R")
   source("R/sort_station.R")
+  source("R/api_weather_station.R")
+  source("R/download_global_tide_all.R")
+  source("R/download_global_weather_all.R")
+  source("R/merging_data_automate.R")
+  source("R/merging_data_mannual.R")
   
+  update_modal_text <- function(text) {
+    removeModal()
+    showModal(modalDialog(
+      div(
+        style = "display: flex; justify-content: center;  align-items: center; height: 20vh;",
+        div(
+          style = "text-align: center;",
+          img(src = 'https://loading.io/assets/mod/spinner/atom/sample.gif', style = "width: 80px; height: 80px;"), 
+          h3(text)
+        )
+      ),
+      footer = NULL,
+      easyClose = FALSE
+    ))
+  }
+  
+  update_modal_text("Please wait ! Loading data ...")
   # loading stations globally
-  tide_station <- read.csv("D:/R/Climate/climate/tide_station.csv")
-  tide_station_rq <- read.csv("tide_station_rq.csv")
+  # tide_station <- read.csv("tide_station.csv")
+  # tide_station_rq <- read.csv("tide_station_rq.csv")
+  con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+  tide_station <- dbReadTable(con, "tide_station")
+  tide_station_rq <- dbReadTable(con, "tide_station_rq")
+  dbDisconnect(con)
   #Loading Tide data from local
-  file_list <- list.files("./Tide/")
-  id <- as.numeric(gsub(".*-(\\d+)\\.csv", "\\1", file_list))
-  tide_path <- "./Tide/"
-  file_list_tide <- list.files(tide_path, pattern = "\\.csv$", full.names = TRUE)
-  
+  # file_list <- list.files("./Tide/")
+  # id <- as.numeric(gsub(".*-(\\d+)\\.csv", "\\1", file_list))
+  # tide_path <- "./Tide/"
+  # file_list_tide <- list.files(tide_path, pattern = "\\.csv$", full.names = TRUE)
+  # 
   #Loading Rain data from local
-  rain_path <- "./Climate_Data/"
-  file_list_rain <- list.files(rain_path, pattern = "\\.csv$", full.names = TRUE)
+  # rain_path <- "./Climate_Data/"
+  # file_list_rain <- list.files(rain_path, pattern = "\\.csv$", full.names = TRUE)
   
   # Loading data for specific Charlottetown
   startDate <- "1943-01-01"
@@ -36,18 +63,10 @@ function(input, output, session) {
   names(cha_data) <- c("Date", "Tide", "Rain")
   
  
-  global_path <- "./Global_Tide/"
-  file_list_global <- list.files(global_path, pattern = "\\.csv$", full.names = TRUE)
+  # global_path <- "./Global_Tide/"
+  # file_list_global <- list.files(global_path, pattern = "\\.csv$", full.names = TRUE)
  
-   update_modal_text <- function(text) {
-    removeModal()
-    showModal(modalDialog(
-      img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'), 
-      text,
-      footer = NULL,
-      easyClose = FALSE
-    ))
-  }
+  
   
    
    
@@ -67,7 +86,7 @@ function(input, output, session) {
     tryCatch({
      out <- head(weathercan::stations_search(input$search_station, interval = input$interval))
     }, error = function(e) {
-      showModal( modalDialog( "Error: No Internet connection",footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
+      update_modal_text("Error !!")
       return(NULL) 
     })
     
@@ -84,7 +103,7 @@ function(input, output, session) {
   observe({
     # Validate data
     observeEvent(input$valid, { 
-     showModal(modalDialog("Loading data .... " ,  img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'), footer =  NULL))
+      update_modal_text("Please wait ! Loading data ...")
       
       # Create string to data
       data <-
@@ -180,7 +199,8 @@ function(input, output, session) {
     output$station_table <- renderTable({
       head(tidyhydat::realtime_stations(prov_terr_state_loc = input$province))[, c(1:4)]
         })
-        }, error = function(e) { showNotification("The system detected that no or weak internet connection", type = "warning")
+        }, error = function(e) { 
+          showModal( modalDialog(  "Error: No data retrieved for the selected station query!", footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
       })
   })
   
@@ -202,7 +222,7 @@ function(input, output, session) {
   observe({
     #Validate data
     observeEvent(input$valid_stream, {
-      showModal(modalDialog("Loading data ..", img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'),   footer = NULL ))
+      update_modal_text("Please wait ! Loading data ...")
       
       data <- 
       tryCatch({
@@ -337,7 +357,7 @@ function(input, output, session) {
   observe({
     # Validate data
     observeEvent(input$valid_tide, {
-      showModal(modalDialog( img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'), "Loading data ...." ,footer = NULL))
+      update_modal_text("Please wait ! Loading data ...")
       
       # link to global tide data
       if (req(input$interval_tide) == "h") {
@@ -406,6 +426,8 @@ function(input, output, session) {
      })
    })
   
+  
+  
   observe({
    
     sort_station_list<- sort_station(as.numeric(input$year_threshold))
@@ -430,54 +452,71 @@ function(input, output, session) {
                                          "START    = ", Start, "<br>", 
                                          'END      = ', End,"<br>", 
                                          "LENGTH YEAR =", round(DifTime, 2)))
+        
           )
       })
     
     # tide_station_rq <- filter(tide_station_rq, UH. %in% sort_station_list()$UH.)
     observeEvent(input$global_tide_download, {
-      # showModal(modalDialog(img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'), paste(" Downloading data for all Station (This can take sometime)" ), footer =  NULL ))
-      
-      update_modal_text("Initializing ...")
-      
-      tryCatch({ 
+      update_modal_text(paste("Downloading data for All Stations"))
+ 
+       tryCatch({ 
         download_global_tide_all(valid_station_list, tide_station_rq)
       }, error = function(e) {
         update_modal_text("Download Error !")
-        
+
       })
       removeModal()
     })
   
+    
+    # Filter by year
     observeEvent(input$filter_by_year , {
      
       update_modal_text("Sorting downloaded data by year...")
-      
-     global_all <- lapply(file_list_global, function(file) {
-      tryCatch({
-        read.csv(file)
-        
-      }, error = function(e) {
-        message("Error reading file ", file, ": ", e$message)
-        return(NULL)
-      })
-    })
-    names(global_all)<- lapply(file_list_global, function(x) sub(global_path, "", x))
     
+      con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+      on.exit(dbDisconnect(con))
+      list_database <- dbListTables(con)
+      station_tables <- grep("^Global_Tide_", list_database, value = TRUE)
+      
+      global_all<- list()
+     
+       for (i in station_tables) {
+      table_data  <- dbReadTable(con, i)
+      table_name <- gsub("\\D", "", i) # extract ID from Global_Tide
+      global_all[[table_name]] <- table_data
+      }
+      
+      
+
+    #  global_all <- lapply(file_list_global, function(file) {
+    #   tryCatch({
+    #     read.csv(file)
+    #     
+    #   }, error = function(e) {
+    #     message("Error reading file ", file, ": ", e$message)
+    #     return(NULL)
+    #   })
+    # })
+    # names(global_all)<- lapply(file_list_global, function(x) sub(global_path, "", x))
+
    
     
      sort_year<- sort_by_year(global_all)
      stations_greater_threshold <- sort_year[sort_year$Row_Count > req(input$year_threshold_2), ]
      stations_greater_threshold_ids <- gsub("[^0-9]", "", stations_greater_threshold$Data_Name)
      
-     sort_station_list2 <- filter(tide_station, UH. %in% stations_greater_threshold_ids)
+     sort_station_list <- filter(tide_station, UH. %in% stations_greater_threshold_ids)
 
      output$remain_year <- renderText({
        paste("Remain ", nrow(sort_station_list), "station")
      })
      
+    
      
      output$map_tide_sortout <- renderLeaflet({
-       leaflet(sort_station_list2, options = leafletOptions(attributionControl = FALSE)) %>% addTiles() %>%
+       leaflet(sort_station_list, options = leafletOptions(attributionControl = FALSE)) %>% addTiles() %>%
          addMarkers(
            lng = ~ Longitude,lat = ~ Latitude,    icon = icon('map-pin'),
            popup = ~ as.character(paste("ID       =", UH., "<br>", 
@@ -487,50 +526,53 @@ function(input, output, session) {
                                         "LON      = ", Longitude, "<br>", 
                                         "START    = ", Start, "<br>", 
                                         'END      = ', End,"<br>"))
+          
          )
        
       })
      
- 
      removeModal()
       
+     dbDisconnect(con)
     })
     
+    
+    filtered_tide_stations <- reactiveVal()
     
     observeEvent(input$filter_by_ratio, {
       update_modal_text("Re-computing missing days ...")
-      global_all <- lapply(file_list_global, function(file) {
-      tryCatch({
-        read.csv(file)
-      }, error = function(e) {
-        message("Error reading file ", file, ": ", e$message)
-        return(NULL)
-      })
-    })
-    names(global_all)<- lapply(file_list_global, function(x) sub(global_path, "", x))
-     
+   
+      if (is.null(sort_year)) {
      sort_year<- sort_by_year(global_all)
-      stations_to_keep <- sort_year[sort_year$Row_Count > req(input$year_threshold_2), ] 
+      } 
       
-       # stations_to_keep <- sort_year[sort_year$Row_Count > 30, ] 
-      
-      global_all_filtered <- global_all[names(global_all) %in% stations_to_keep$Data_Name]
+    stations_to_keep <- sort_year[sort_year$Row_Count > req(input$year_threshold_2), ] 
       
       
+    global_all_filtered <- global_all[names(global_all) %in% stations_to_keep$Data_Name]
       
+  
     sort_day<- sort_by_day(global_all_filtered)
+      
+      
     print(sort_day$Missing_Day_Ratio)
     stations_greater_threshold <- sort_day[sort_day$Missing_Day_Ratio <= req(input$missing_threshold), ]
     stations_greater_threshold_ids <- gsub("[^0-9]", "", stations_greater_threshold$Data_Name)
     
-    sort_station_list <- filter(tide_station, UH. %in% stations_greater_threshold_ids)
+    sort_station_list2 <- filter(tide_station, UH. %in% stations_greater_threshold_ids)
+   
+    con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+    on.exit(dbDisconnect(con))
+    dbWriteTable(con, "sort_tide_station", sort_station_list2, overwrite = T)
+     
+    # write.csv(sort_station_list2, file ="sort_tide_station.csv")
     
     output$remain_station <- renderText({
-      paste("Remain ", nrow(sort_station_list), "station")
+      paste("Remain ", nrow(sort_station_list2), "station")
     })
 
     output$map_tide_sortout <- renderLeaflet({
-      leaflet(sort_station_list, options = leafletOptions(attributionControl = FALSE)) %>% addTiles() %>%
+      leaflet(sort_station_list2, options = leafletOptions(attributionControl = FALSE)) %>% addTiles() %>%
         addMarkers(
           lng = ~ Longitude,lat = ~ Latitude,    icon = icon('map-pin'),
           popup = ~ as.character(paste("ID       =", UH., "<br>", 
@@ -545,6 +587,7 @@ function(input, output, session) {
     })
     
     removeModal()
+    dbDisconnect(con)
     
     })
     
@@ -610,7 +653,7 @@ function(input, output, session) {
     # Create a loop to download all data
      for (i in 1:length(station_all[,1])){
 
-      showModal(modalDialog(img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'), paste(" Downloading data for ",station_all$UH.[i],"-", station_all$Location[i]), footer =  NULL ))
+       update_modal_text(paste(" Downloading data for ",station_all$UH.[i],"-", station_all$Location[i]))
       
        # Format Date for data
       station_all$Start <- as.Date(station_all$Start, format = "%m/%d/%Y")
@@ -703,7 +746,7 @@ function(input, output, session) {
     observe({ 
      # Validate data
     observeEvent(input$valid_global_data, {
-      showModal(modalDialog( img(src = 'https://loading.io/assets/mod/spinner/spinner/sample.gif'),  "Please wait ! Loading data in process .." ,  footer = NULL ))
+      update_modal_text("Please wait ! Loading data in process ..")
       
       tryCatch({
         # Validate data for individual
@@ -746,173 +789,473 @@ function(input, output, session) {
        })
     })
   
+    observe({
+      
+      # Check if data is already cached to prevent repeated downloads
+      if (exists("gauging_station_data")) {
+        a <- gauging_station_data
+      } else {
+        # Load and process data only if not cached
+        url <- "https://bulk.meteostat.net/v2/stations/full.json.gz"
+        response <- GET(url)
+        
+        # Handle the response and extract relevant data
+        temp_file <- tempfile(fileext = ".json.gz")
+        writeBin(response$content, temp_file)
+        
+        json_file <- tempfile(fileext = ".json")
+        gunzip(temp_file, json_file)
+        
+        data <- fromJSON(json_file)
+        
+        # Select relevant columns and filter rows if needed
+        a <- data.frame(
+          ID = data$id,
+          Station = data$name,
+          Country = data$country,
+          Region = data$region,
+          latitude = data$location$latitude,
+          longitude = data$location$longitude,
+          Start = data$inventory$daily$start,
+          End = data$inventory$daily$end
+        ) %>% 
+          # Filter for specific regions or other criteria if necessary
+          filter(!is.na(latitude) & !is.na(longitude))  # Example filter
+        
+        # Cache the data for future use
+        assign("gauging_station_data", a, envir = .GlobalEnv)
+      } 
+      
+      mydrawPolylineOptions <- function (allowIntersection = TRUE, 
+                                         drawError = list(color = "#b00b00", timeout = 2500), 
+                                         guidelineDistance = 20, metric = TRUE, feet = FALSE, zIndexOffset = 2000, 
+                                         shapeOptions = drawShapeOptions(fill = FALSE), repeatMode = FALSE) {
+        leaflet::filterNULL(list(allowIntersection = allowIntersection, 
+                                 drawError = drawError, guidelineDistance = guidelineDistance, 
+                                 metric = metric, feet = feet, zIndexOffset = zIndexOffset,
+                                 shapeOptions = shapeOptions,  repeatMode = repeatMode)) }
+      
+    output$gauging_station <- renderLeaflet({
+      # Create leaflet map
+      leaflet(req(a), options = leafletOptions(attributionControl = FALSE)) %>%
+        addTiles() %>%
+        addDrawToolbar(
+          polylineOptions = mydrawPolylineOptions(metric=TRUE, feet=FALSE),
+          editOptions=editToolbarOptions(selectedPathOptions=selectedPathOptions())
+        )%>%
+        addMarkers(
+          lng = ~ longitude,
+          lat = ~ latitude,
+          icon = icon('map-pin'),
+          popup = ~ as.character(paste("ID       =", ID, "<br>",
+                                       "Station =", Station.en, "<br>",
+                                       "Country  =", Country, "<br>",
+                                       "Region =", Region, "<br>",
+                                       "LAT      = ", latitude, "<br>",
+                                       "LON      = ", longitude, "<br>",
+                                       "START    = ", Start, "<br>",
+                                       'END      = ', End,"<br>")),
+          clusterOptions = markerClusterOptions()  # Enable clustering for better performance
+        )
+    })
+    
+    output$request_count <- renderUI({
+      h3(style = "color: red;", "Please Calculate Distance first!")
+    })
+    
+    
+    observeEvent(input$distance_gauging_weather, {
+      update_modal_text("Computing nearest distance and search longest historical data ...")
+      
+      con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+      on.exit(dbDisconnect(con))
+      tide_stations <- dbReadTable(con, "sort_tide_station")
+      # tide_stations <- read.csv("sort_tide_station.csv")[, -1]
+      names(tide_stations) <- c("ID", "GLOSS", "Location", "Country", "latitude", "longitude", "Start", "End")
+      
+     
+      climate_stations <- a
+      
+      # Ensure latitude and longitude are numeric in both data frames
+      tide_stations$latitude <- as.numeric(tide_stations$latitude)
+      tide_stations$longitude <- as.numeric(tide_stations$longitude)
+      climate_stations$latitude <- as.numeric(climate_stations$latitude)
+      climate_stations$longitude <- as.numeric(climate_stations$longitude)
+      
+      # Find the nearest climate stations
+      #nearest_stations <- find_nearest_stations(tide_stations, climate_stations, req(input$buffer))
+      results <- find_nearest_stations(tide_stations, climate_stations, req(input$buffer))
+      
+      nearest_stations <-results$all_longest_stations  #within buffer
+      
+      tide_outside_buffer <- results$tide_outside_buffer #outsize buffer
+      
+      dbWriteTable(con, "list_nearby_station_pr_wl", nearest_stations, overwrite = TRUE)
+      on.exit(dbDisconnect(con))
+      
+      
+      # write.csv(nearest_stations, "nearby_station2.csv")
+      updateSelectInput(session, "distance_gauging_weather", paste("Distance ", nrow(nearest_stations), " station") )
+      
+      output$weather_global_data<- renderTable({
+        tide_outside_buffer
+      })
+      
+      output$table_title <- renderUI({
+        if (nrow(tide_outside_buffer) > 0) {
+          tags$h3(paste("There are",nrow(tide_outside_buffer), "stations Outside Buffer"))
+        } else {
+          tags$h3("Data Availability")
+        }
+      })
+      
+ 
+    
+      output$gauging_station <- renderLeaflet({
+       
+        leaflet(nearest_stations, options = leafletOptions(attributionControl = FALSE)) %>%
+          addTiles() %>%
+        addDrawToolbar(
+            polylineOptions = mydrawPolylineOptions(metric=TRUE, feet=FALSE),
+            editOptions=editToolbarOptions(selectedPathOptions=selectedPathOptions())
+          ) %>%
+          addCircles(
+            lng = ~ Climate_Longitude,
+            lat = ~ Climate_Latitude,
+            radius = req(input$buffer)*1000,  # Radius in meters (15 km)
+            color = "red",  
+            fillOpacity = 0.2, 
+            weight = 1, 
+            popup = ~ as.character(paste("Radius: ", req(input$buffer)," km"))  
+          ) %>%
+          addCircleMarkers(
+            lng = ~ Climate_Longitude,
+            lat = ~ Climate_Latitude,
+            color = "red",
+            popup = ~ as.character(paste("ID       =", Climate_ID, "<br>",
+                                         "Station =", Climate_Station, "<br>",
+                                         "Country  =", Climate_Country, "<br>",
+                                         "Region =", Climate_Region, "<br>",
+                                         "LAT      = ", Climate_Latitude, "<br>",
+                                         "LON      = ", Climate_Longitude, "<br>",
+                                         "START    = ", Start, "<br>",
+                                         'END      = ', End,"<br>",
+                                         'LENGTH DAY      = ', Dataset_Length," Days <br>",
+                                         'SAME WL STATION      = ', Tide_Station," <br>",
+                                         'SAME WL ID      = ', Tide_ID," <br>"
+                                         ))) 
+      })
+      
+      
+      removeModal()
+      
   
+    # Download weather data for each nearest station
+      observeEvent(input$download_gauging_weather, {
+        # Initialize total segments
+        total_segments <- 0
+        
+        # Check if nearest_stations is available
+        if (!is.null(nearest_stations) && nrow(nearest_stations) > 0) {
+          # Calculate segments for each nearest station
+          for (i in 1:nrow(nearest_stations)) {
+            station_id <- nearest_stations$Climate_ID[i]
+            start_date <- nearest_stations$Start[i]
+            end_date <- nearest_stations$End[i]
+            
+            num_segments <- calculate_segments(start_date, end_date)
+            total_segments <- total_segments + num_segments
+          }
+          
+          # Update the UI output with the total number of requests
+          output$request_count <- renderUI({
+            h3(paste("There are a total of", total_segments, "API requests"))
+          })
+        } else {
+          # Reset to default message if no nearest stations found
+          output$request_count <- renderUI({
+            h3("Please Calculate Distance first!")
+          })
+        }
+      })
+      
+      
+      observeEvent(input$download_gauging_weather_submit, {
+        all_weather_data <- list()
+        
+  
+        
+         tryCatch({
+           for (i in 112:nrow(nearest_stations)) {
+            update_modal_text(paste("Downloading at ", nearest_stations$Climate_ID[i],"-" , nearest_stations$Climate_Station[i],"-", nearest_stations$Climate_Country[i], "..."))
+            
+            station_id <- nearest_stations$Climate_ID[i]
+            start_date <- as.Date(nearest_stations$Start[i], "%Y-%m-%d")
+            end_date <- as.Date(nearest_stations$End[i], "%Y-%m-%d")
+            
+            # Call the API function
+            weather_data <- api_weather_loop(station_id, start_date, end_date)
+            
+            # Check if data is not empty
+            if (!is.null(weather_data) && nrow(weather_data) > 0) {
+              all_weather_data[[station_id]] <- weather_data  # Use station ID as the name
+              
+              # Save to CSV
+              # write.csv(weather_data, file = paste0("database/weather_station_", station_id, ".csv"), row.names = FALSE)
+              
+              # Save to SQLite database
+              con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+              dbWriteTable(con, name = paste0("station_", station_id), value = weather_data, append = TRUE, row.names = FALSE)
+               } else {
+              update_modal_text(paste("No data returned for station ID =", station_id))
+            }
+          }
+          
+          # Optionally, bind all data together 
+          final_weather_data <- do.call(rbind, all_weather_data)
+          
+          update_modal_text("All weather data downloaded successfully.")
+          
+          removeModal()
+        }, error = function(e) {
+          showModal( modalDialog(  "Download Error! Probably exceeded API request limits.", footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
 
-  
+        }, finally = {
+          dbDisconnect(con)
+
+        })
+      })
+     
+     
+    
+    })
+    })
+    
+    
+    
+    
+    
   #--------------------------------------------------------------------------------------------
   #===============================  COPULAS MODEL =============================================
 
   # ++++++++++++++++++++++++++++++++ PROCESSING ++++++++++++++++++++++++++++++++++++++++++++++  
     observe({
       
-      # observeEvent(input$process_data, {
-      # Load rain data from local `file_list_rain`
-      rain_all <- lapply(file_list_rain, function(file) {
-        tryCatch({
-          read.csv(file)
-        }, error = function(e) {
-          message("Error reading file ", file, ": ", e$message)
-          return(NULL)
-        })
-      })
-  
-      rain_all <- rain_all[!sapply(rain_all, is.null)]
-      names(rain_all) <- lapply(file_list_rain, function(x) sub(rain_path, "", x))
-
-  
-      # Load tide data from local `file_list_tide`
-      tide_all <- lapply(file_list_tide, function(file) {
-        tryCatch({
-          read.csv(file)
-        }, error = function(e) {
-          message("Error reading file ", file, ": ", e$message)
-          return(NULL)
-        })
-      })
-      tide_all <- tide_all[!sapply(tide_all, is.null)]
-      names(tide_all) <- lapply(file_list_tide, function(x) sub(paste0(tide_path, "data-"), "", x))
+   
       
-      rain_ids <- sapply(names(rain_all), function(x) sub("-.*", "", x))
-      tide_ids <- sapply(names(tide_all), function(x) sub(".csv", "", x))
-      merged_data <- list()
-  
-      #Merging data for rain and tide based on marching ID
-      for (i in seq_along(rain_ids)) {
-        rain_id <- rain_ids[i]
-        matching_tide_index <- which(tide_ids == rain_id)
-        
-        if (length(matching_tide_index) > 0) {
+      observeEvent(input$remove_station_submit, {
+      con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+      on.exit(dbDisconnect(con)) 
+      tide_ids_to_remove <- req(input$remove_station)
+      tide_ids_string <- paste(tide_ids_to_remove, collapse = ", ")
+      delete_query <- paste("DELETE FROM list_nearby_station_pr_wl WHERE Tide_ID IN (", tide_ids_string, ")", sep = "")
+      dbExecute(con, delete_query)
+      showModal( modalDialog(  "Stations have been removed from Database", footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
+      })
       
-          rain_data <- rain_all[[i]]
-          tide_data <- tide_all[[matching_tide_index]]
-          
-          
-          if (!"Date" %in% colnames(tide_data) & req(input$interval_tide) == "d") {
-            tide_data$Date <- as.Date(with(tide_data, paste(Year, Month, Day, sep = "-")), "%Y-%m-%d")
-          } else {
-            tryCatch({
-            tide_data$Date <- as.POSIXct(with(data, paste(Year, Month, Day, Hour, sep = "-")), 
-                                    format = "%Y-%m-%d-%H")
-            }, error = function(e) {
-              return(NULL)
-            })
-          }
-          
-          if (!"Date" %in% colnames(rain_data)) {
-            stop(paste("Column 'Date' not found in rain_data for ID:", rain_id))
-          }
-          
-          
-          tryCatch({ 
-          rain_data$Date <- as.character(rain_data$Date)
-          rain_data$Date <- as.Date(rain_data$Date, format = "%Y-%m-%d")
-          
-          tide_data$Date <- as.Date(tide_data$Date)
-          tide_data <- tide_data[complete.cases(tide_data$Tide), ]
+      
+      
+       observeEvent(input$process_data, {
+   
+      if (req(input$automate_switch) == "Automate"){
+        update_modal_text("Automate approach executes data from SQL database ...")
+      merged_data <- merging_data_automate(merge_pair_automate)
+      } else  {
+         update_modal_text("Manual approach executes CSV data from local ...")
+      merged_data <- merging_data_mannual(merge_pair_mannual)
+      }
        
-          merged_df <- left_join(tide_data, rain_data, by = "Date")
-          merged_df$Tide <- merged_df$Tide / 1000
-          
-          merged_df <- merged_df[, c(6, 5, 8)]
-          names(merged_df) <- c("Date", "Tide", "Rain")
-          merged_data[[rain_id]] <- merged_df
-          
-          }, error = function(e) {
-            return(NULL)
-          })
-          
-        } else {
-          warning(paste("No matching tide data found for rain ID:", rain_id))
-        }
+     merged_data$Charlottetown <- cha_data  
+     
+      updateSelectizeInput(session,  "station_process", choices =  rbind("Charlottetown",names(merged_data)) )
+      
+ 
+      
+      
+      
+    # TRIM
+    adjusted_data <- reactiveVal(list())
+      
+    observeEvent(input$trim_date_submit,{
+      
+      station_name <- as.character(req(input$station_process))
+      
+      adjusted_data <- merged_data[[station_name]] %>%
+        filter(Date >= input$trim_date[1] & Date <= input$trim_date[2])
+      
+    
+      if (input$adjust_data_variable == "Tide") {
+        adjusted_data <- adjusted_data %>%
+          mutate(Tide = ifelse(Date >= input$adjust_date[1] & Date <= input$adjust_date[2],
+                               Tide + input$adjust_threshold, Tide))
+      } else {
+        adjusted_data <- adjusted_data %>%
+          mutate(Rain = ifelse(Date >= input$adjust_date[1] & Date <= input$adjust_date[2],
+                               Rain + input$adjust_threshold, Rain))
       }
       
-      # Merge Charlottetown station to the data
-      merged_data$Charlottetown <- cha_data
-  
+      current_adjusted <- adjusted_data()
+      current_adjusted[[station_name]] <- adjusted_data 
+      adjusted_data(current_adjusted)
+      
+      output$process_plot <- renderPlotly({
+        p<-   plot_ly(adjusted_data, x = ~Date) %>%
+          add_lines(y = ~Rain, name = 'Rain', line = list(color = req(input$colopickup1)), yaxis = "y1") %>%
+          add_lines(y = ~Tide, name = 'Tide', line = list(color = req(input$colopickup2)), yaxis = "y2") %>%
+          layout(
+            title = list(text = paste("Daily Precipitation and Water Level at", input$station_process,"station")),
+            yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = req(input$colopickup1))),
+            yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = req(input$colopickup2))),
+            xaxis = list(title = ""),
+            legend = list(orientation = 'h', xanchor = "center", x = 0.5, y = -0.1)
+          )
+        plotly::ggplotly(p) %>%
+          config(displaylogo = F)
+      })
+    })
+      
+      
+    observeEvent(input$rewrite_submit_original, {
+        station_name <- as.character(req(input$station_process))
+        con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+        on.exit(dbDisconnect(con)) 
+        # For Tide
+        current_adjusted_data <- adjusted_data()[[station_name]]  # Access the reactive list
+        current_adjusted_data$Date <- as.character(current_adjusted_data$Date)
+        
+        # adjusted_data_list <- adjusted_data()  # Get the current adjusted data
+        # adjusted_data_list[[station_name]]$Date <- as.character(adjusted_data_list[[station_name]]$Date)
+        
+        # adjusted_data$Date <-  as.character(adjusted_data$Date)
+        dbWriteTable(con, name = paste0("Global_Tide_", station_name, "_adjusted"), value = current_adjusted_data, overwrite = TRUE, row.names = FALSE)
+        
 
+        update_modal_text("A new version of data has been added to database !")
   
-  # Update station ID
-   updateSelectizeInput(session,  "station_process", choices =  rbind("Charlottetown",names(merged_data))) 
-  
+        removeModal()
+        
+      
+      })
+        
+
+ 
+    
+    con <- dbConnect(RSQLite::SQLite(), "database/data.sqlite")
+    on.exit(dbDisconnect(con))
+    list_database <- dbListTables(con)
+    tide_station_tables <- grep("^Global_Tide_", list_database, value = TRUE)
+    
+    
+    merged_data <- get_station_with_adjusted_data(merged_data, gsub("^Global_Tide_", "", tide_station_tables ))
+    # RESET
+    
+    observeEvent(input$reset_adjust,{
+      # merged_data[[as.character(req(input$station_process))]] <-merged_data[[as.character(req(input$station_process))]] 
+      output$process_plot <- renderPlotly({
+        p<-   plot_ly(merged_data[[as.character(req(input$station_process))]], x = ~Date) %>%
+          add_lines(y = ~Rain, name = 'Rain', line = list(color = req(input$colopickup1)), yaxis = "y1") %>%
+          add_lines(y = ~Tide, name = 'Tide', line = list(color = req(input$colopickup2)), yaxis = "y2") %>%
+          layout(
+            title = list(text = paste("Daily Precipitation and Water Level at", input$station_process,"station")),
+            yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = req(input$colopickup1))),
+            yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = req(input$colopickup2))),
+            xaxis = list(title = ""),
+            legend = list(orientation = 'h', xanchor = "center", x = 0.5, y = -0.1)
+          ) 
+        plotly::ggplotly(p) %>%
+          config(displaylogo = F) 
+      })
+      
+    })
+    
+    
   # Display daily rain and tide data
+   
+   
+     
+   output$global_pair_data <- renderDT({
+     merged_data[[as.character(req(input$station_process))]]
+   })
   
   output$process_plot <- renderPlotly({
    p<-   plot_ly(merged_data[[as.character(req(input$station_process))]], x = ~Date) %>%
-      add_lines(y = ~Rain, name = 'Rain', line = list(color = "#cf2393"), yaxis = "y1") %>%
-      add_lines(y = ~Tide, name = 'Tide', line = list(color = "#05b3b3"), yaxis = "y2") %>%
+      add_lines(y = ~Rain, name = 'Rain', line = list(color = req(input$colopickup1)), yaxis = "y1") %>%
+      add_lines(y = ~Tide, name = 'Tide', line = list(color = req(input$colopickup2)), yaxis = "y2") %>%
       layout(
-        title = list(text = paste("Daily Precipitation and Tide at", input$station_process,"station")),
-        yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = '#ff2223')),
-        yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = '#ff9923')),
+        title = list(text = paste("Daily Precipitation and Water Level at", input$station_process,"station")),
+        yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = req(input$colopickup1))),
+        yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = req(input$colopickup2))),
         xaxis = list(title = ""),
         legend = list(orientation = 'h', xanchor = "center", x = 0.5, y = -0.1)
-      ) 
+      )
    plotly::ggplotly(p) %>%
-     config(displaylogo = F) 
+     config(displaylogo = F)
   })
                                             
      # Display their relationship 
-     output$process_plot_cor<- renderPlot({
-       valid_data <- merged_data[[as.character(req(input$station_process))]] %>%
-         filter(is.finite(Rain), is.finite(Tide))
-       ggplot(valid_data, aes(x = Rain, y = Tide)) +
-         geom_point(alpha = 0.4, color = "#9067a1") +
-         geom_smooth(method="lm",  formula = y ~ x, col = "#0a5bbf", se = FALSE)+
-         theme_few(base_size = 10)
-     }) 
+     output$process_plot_cor<-   renderLeaflet({
+       station<- filter(tide_station, UH. == req(input$station_process))
+       leaflet(station, options = leafletOptions(attributionControl = FALSE)) %>%
+         addTiles() %>%
+         addMarkers(
+           lng = ~ Longitude,
+           lat = ~ Latitude,
+           popup = ~ as.character(paste("ID       =", UH., "<br>",
+                                        "Station =", Location, "<br>",
+                                        "Country  =", Country, "<br>",
+                                        "LAT      = ", Latitude, "<br>",
+                                        "LON      = ", Longitude, "<br>"
+           ))) 
+     })
+ 
      
+    
      #Display message
       output$message <- renderText({
         paste(
           "Data contains daily Precipitation and Tide for station ID = ",
           "<strong>",
           req(input$station_process),
-          "</strong>",
-          ".<br> The `NA` values were removed from the data.<br>",
-          "`Starting` and `Ending Dates` were automatically picked up based on the available data from Tide but not less than `1940-01-01` <br>"
-        )
+          "</strong>")
       })
       
-      
-    # })
+     
+    removeModal()
+ 
  
  
  # ++++++++++++++++++++++++++++++++ NORMALISATION  ++++++++++++++++++++++++++++++++++++++++++++++ 
   
    # Perform normalisation
-   # observeEvent(input$distance_based, {
-      # tryCatch({
-        
+    # observeEvent(input$distance_based, {
+       tryCatch({
+         update_modal_text("Analyzing with Distance-based Approach ...")
         # Show messages
-        output$message <- renderUI({
-          withMathJax(HTML(
-            paste(
-              "<p>",
-              "Step 1: Percentile Normalization $$ \\text{value_percentile} = \\frac{\\text{rank}(x)}{n} \\times 100 $$ <br>",
-              "Step 2: Distance Calculation $$ \\text{distance_from_extreme} = \\sqrt{(100 - \\text{rain_normalized})^2 + (100 - \\text{tide_normalized})^2} $$",
-              "</p>"
-            )
-          ))
-        })
+
        
        # Performe quantile normalisation and calculate Tau value for each dataset  
        data_with_distance_global <- list()
        kendall_value_global <- list()
-       tau_value <- data.frame()
-   
+       tau_value <- data.frame(Station = character(), Tau = numeric(), p_value = numeric(), Latitude = numeric(), Longitude = numeric(), stringsAsFactors = FALSE)
+       
+      
+         
+       
        for (j in names(merged_data)) {
          data_with_distance_global[j] <- list(distance_quantile_normalization(merged_data[[j]], names(merged_data)[j]))
-         kendall_value_global[[j]] <- cor.test(as.numeric(data_with_distance_global[[j]]$Rain), as.numeric(data_with_distance_global[[j]]$Tide), method = "kendall")
+        
+         # Extract Rain and Tide data
+         rain_data <- as.numeric(data_with_distance_global[[j]]$Rain)
+         tide_data <- as.numeric(data_with_distance_global[[j]]$Tide)
+         
+         # Check if the data is numeric and has sufficient values
+         if (is.null(rain_data) || is.null(tide_data) || length(na.omit(rain_data)) < 2 || length(na.omit(tide_data)) < 2) {
+           message(paste("Skipping station:", j, "- insufficient numeric data for Kendall test."))
+           next  # Skip to the next station
+         }
+         # Perform Kendall test
+         kendall_value_global[[j]] <- suppressWarnings(cor.test(rain_data, tide_data, method = "kendall"))
+         
          tau_values <- kendall_value_global[[j]]$estimate
          p_values  <- kendall_value_global[[j]]$p.value
          filtered_station <- filter(tide_station, UH. == j)
@@ -926,18 +1269,24 @@ function(input, output, session) {
            lon <- NA
          }
          
-         tau_value <- rbind(tau_value, data.frame(Station = j, Tau = tau_values, p_value =p_values,  Latitude = lat, Longitude = lon))
-       }  
+         
+         tau_value <- rbind(tau_value, data.frame(Station = j, Tau = tau_values, p_value =p_values,  Latitude = lat, Longitude = lon, stringsAsFactors = FALSE))
+         
+        
+       } 
+       
+       list(tau_value = tau_value, data_with_distance_global = data_with_distance_global)
       
+       
       # Display Normalised data in Annual
       output$plot_distance <- renderPlotly({
         p<- plot_ly(data_with_distance_global[[as.character(req(input$station_process))]], x = ~Date) %>%
-          add_lines(y = ~Rain, name = 'Rain', line = list(color = "#0f9934"), yaxis = "y1") %>%
-          add_lines(y = ~Tide, name = 'Tide', line = list(color = "#7757f7"), yaxis = "y2") %>%
+          add_lines(y = ~Rain, name = 'Rain', line = list(color = req(input$colopickup1)), yaxis = "y1") %>%
+          add_lines(y = ~Tide, name = 'Tide', line = list(color = req(input$colopickup2)), yaxis = "y2") %>%
           layout(
             title = list(text = paste("Annual Precipitation and Tide at", req(input$station_process),"station")),
-            yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = '#ff2223')),
-            yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = '#ff9923')),
+            yaxis = list(title = "Rain", side = "left", overlaying = "y2", showline = TRUE, tickfont = list(color = req(input$colopickup1))),
+            yaxis2 = list(title = "Tide", side = "right", showline = TRUE, tickfont = list(color = req(input$colopickup2))),
             xaxis = list(title = ""),
             legend = list(orientation = 'h', xanchor = "center", x = 0.5, y = -0.1)
           )
@@ -951,18 +1300,34 @@ function(input, output, session) {
                   c("pearson", "kendall", "spearman")[2], (input$station_process))
        })
       
+      
+      tau_bins <- seq(-1.0, 1.0, by = 0.2)  # 10 bin boundaries, defining 9 intervals
+      tau_colors <- c( "#1147DB", "#0D6FA8", "#0FC298", "#15A321", "#C2CC0A", "#FF9C08", "#F0095A", "red", "#700B0B", "#330B0B")  # 9 colors
+      tau_labels <- c("-1.0 - -0.8", "-0.8 - -0.6", "-0.6 - -0.4", "-0.4 - -0.2", "-0.2 - 0.0", 
+                      "0.0 - 0.2", "0.2 - 0.4", "0.4 - 0.6", "0.6 - 0.8", "0.8 - 1.0")
+      
       # Display global Tau value on map
       getColor <- function(tau) {
-        if (tau <= 0.1) {
-          "blue"
+        if (tau <= -0.8) {
+          tau_colors[1]
+        } else if (tau <= -0.6) {
+          tau_colors[2]
+        } else if (tau <= -0.4) {
+          tau_colors[3]
+        } else if (tau <= -0.2) {
+          tau_colors[4]
+        } else if (tau <= 0.0) {
+          tau_colors[5]
         } else if (tau <= 0.2) {
-          "green"
-        } else if (tau <= 0.3) {
-          "yellow"
+          tau_colors[6]
         } else if (tau <= 0.4) {
-          "orange"
+          tau_colors[7]
+        } else if (tau <= 0.6) {
+          tau_colors[8]
+        } else if (tau <= 0.8) {
+          tau_colors[9]
         } else {
-          "red"
+          tau_colors[10]
         }
       }
       getShape <- function(p_value) {
@@ -973,9 +1338,7 @@ function(input, output, session) {
         }
       }
       
-      tau_bins <- c(0, 0.1, 0.2, 0.3, 0.4, 1)
-      tau_colors <- c("blue", "green", "yellow", "orange", "red")
-      tau_labels <- c("≤ 0.1", "0.1 - 0.2", "0.2 - 0.3", "0.3 - 0.4", "> 0.4")
+      
       
       output$normalise_global <- renderLeaflet({
 
@@ -988,7 +1351,7 @@ function(input, output, session) {
           addCircleMarkers(
             ~Longitude, ~Latitude,
             color = ~sapply(Tau, getColor),
-            radius = 8, fillOpacity = 0.8,
+            radius = 8, fillOpacity = 0.5,
             label = ~sapply(p_value, getShape), 
             popup = ~paste( "Station:", Station, "<br>",  "Tau:", round(Tau, 3), "<br>",  "P-value:", format.pval(p_value)
             )
@@ -1003,15 +1366,15 @@ function(input, output, session) {
        })
      
       
-      
-     # }, error = function(e) {
-     #   showModal( modalDialog("Please perform PRE-PROCESSING data first before NORMALISATION", footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
-     #   return(NULL)
-     # })
+     }, error = function(e) {
+       showModal( modalDialog("Please perform PRE-PROCESSING data first before NORMALISATION", footer = tagList(actionButton("closeErrorModal", "Close", class = "btn-default") )))
+       return(NULL)
+     })
    
-  # })
+     
+   # }) #Normalisation
   
-  
+    removeModal()
    
    # ++++++++++++++++++++++++++++++++ COPULA ANALYSIS  +++++++++++++++++++++++++++++++++++++++++++
    
@@ -1019,45 +1382,55 @@ function(input, output, session) {
 
    observeEvent(input$copula_analysis, {
    
+     update_modal_text("Performing Copula Analysis ...")
      # tryCatch({
      
-
+     station_name <- as.character(req(input$station_process))
+     error_stations <- c()
      
-      # Data for selected station  
-      data<- data.frame(P= data_with_distance_global[[as.character(req(input$station_process))]]$Rain, H =data_with_distance_global[[as.character(req(input$station_process))]]$Tide)
-      
-      # Selected copula families
-      copula_families <- list(
-        Gaussian = copula::normalCopula(),
-        Clayton = copula::claytonCopula(),
-        Frank = copula::frankCopula(),
-        Gumbel = copula::gumbelCopula(),
-        Joe = copula::joeCopula()
-      )
-      
-      
-      # Function to calculate copula parameters   
-      copula_parameters <- list()
-      
-      for (i in seq_along(copula_families)) {
-        copula_name <- names(copula_families)[i]
-        copula_function <- copula_families[[i]]
-    
-        copula_parameters[[copula_name]] <-  parameter(copula_function, data)
-      }
-      
-      
-   
-      
-      # Apply the above parameters back to copula models
-      copula_families <- list(
-        Gaussian = copula::normalCopula(param = copula_parameters$Gaussian, dim = 2),
-        Clayton = copula::claytonCopula(param = copula_parameters$Clayton, dim = 2),
-        Frank = copula::frankCopula( param = copula_parameters$Frank, dim = 2),
-        Gumbel = copula::gumbelCopula(param = copula_parameters$Gumbel, dim = 2),
-        Joe = copula::joeCopula(param = copula_parameters$Joe, dim = 2)
-      )
-      
+     rain_data <- data_with_distance_global[[station_name]]$Rain
+     tide_data <- data_with_distance_global[[station_name]]$Tide
+     
+     # Check if both rain_data and tide_data have valid entries
+     if (length(rain_data) < 2 || length(tide_data) < 2) {
+       warning(paste("Station", station_name, "has insufficient data for Rain and Tide. Skipping this station."))
+       error_stations <- c(error_stations, station_name)  # Log the station with an error
+     } else {
+       # Create data frame
+       data <- data.frame(P = rain_data, H = tide_data)
+           
+           # Selected copula families
+           copula_families <- list(
+             Gaussian = copula::normalCopula(),
+             Clayton = copula::claytonCopula(),
+             Frank = copula::frankCopula(),
+             Gumbel = copula::gumbelCopula(),
+             Joe = copula::joeCopula()
+           )
+           
+           # Function to calculate copula parameters   
+           copula_parameters <- list()
+           
+           for (i in seq_along(copula_families)) {
+             copula_name <- names(copula_families)[i]
+             copula_function <- copula_families[[i]]
+             
+             # Calculate parameters
+             copula_parameters[[copula_name]] <- parameter(copula_function, data)
+           }
+           
+           # Apply the above parameters back to copula models
+           copula_families <- list(
+             Gaussian = copula::normalCopula(param = copula_parameters$Gaussian, dim = 2),
+             Clayton = copula::claytonCopula(param = copula_parameters$Clayton, dim = 2),
+             Frank = copula::frankCopula(param = copula_parameters$Frank, dim = 2),
+             Gumbel = copula::gumbelCopula(param = copula_parameters$Gumbel, dim = 2),
+             Joe = copula::joeCopula(param = copula_parameters$Joe, dim = 2)
+           )
+           
+       
+     }
+     
       # List of marginal distributions
       distributions_to_test <- c("norm", "gamma", "weibull", "lnorm", "exp", "gev",  "logistic", "cauchy")
       
@@ -1148,10 +1521,6 @@ function(input, output, session) {
       output$message <- renderUI({
         withMathJax(HTML(
           paste(
-            "<p>",
-            "AIC: $$ \\text{AIC} = 2k - 2\\ln(L) $$ <br>",
-            "BIC: $$ \\text{BIC} = \\ln(n)k - 2\\ln(L) $$",
-            "</p>",
             "Smallest AIC is",
             round(min(unlist(aic_values)), 3),
             "for the copula model:",
@@ -1170,8 +1539,8 @@ function(input, output, session) {
         ))
       })
       
-      
-    
+   
+      removeModal()
        
    
 
@@ -1183,7 +1552,8 @@ function(input, output, session) {
      
     # Perform return period  
      observeEvent(input$rp_submit, {
-      
+       
+       update_modal_text("Analyzing Joint Return Period ...")
        
        joint_return_periods <- lapply(copula_models, calculate_joint_return_period, req(as.numeric(input$rp)), data)
        
@@ -1260,6 +1630,7 @@ function(input, output, session) {
           config(displaylogo = F) 
         })
   
+      removeModal()
       }) # Submit RP
   
      
@@ -1276,19 +1647,20 @@ function(input, output, session) {
      #   showNotification("Tau value for some Copula model is too small", type = "error")
      # })
      
- 
+     
    }) # Submit
       
-  
+ }) #processing data  
    
     #IDF Table
     output$table_idf_rp <- renderTable({
         table2a
     })
    
+
     removeModal()
     
-    
+
     # =================VIEW MAP =================================
     
     
